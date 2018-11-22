@@ -32,5 +32,6 @@
 # Other #
 #########
 *.png
+*.npy
 sample_submission.csv
 train.csv
