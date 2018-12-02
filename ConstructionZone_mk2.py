@@ -1,28 +1,19 @@
-import scipy
 import numpy as np
-import keras
 import os
-import shutil
 from PIL import Image
 import imgaug as ia
 import pandas as pd
-from keras.preprocessing.image import ImageDataGenerator
 from keras.models import Sequential, load_model, Model
 from keras.layers import Activation, Dropout, Flatten, Dense, Input, Conv2D, MaxPooling2D, BatchNormalization, Concatenate, ReLU, LeakyReLU
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau
-from keras import metrics
-from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
 from keras import backend as K
 import keras
 import tensorflow as tf
 from tqdm import tqdm
 from sklearn.metrics import f1_score as off1
-
-from tensorflow import set_random_seed
-from keras.models import Sequential
 from keras.layers import Dense, Conv2D, MaxPooling2D, Flatten, Dropout, BatchNormalization, Activation
-from keras.optimizers import SGD, Adam
+from keras.optimizers import SGD, Adam, Nadam
 from imgaug import augmenters as iaa
 import cv2
 from keras.backend.tensorflow_backend import set_session
@@ -39,10 +30,10 @@ train_dir = 'all/train'
 valid_dir = 'all/valid'
 test_dir = 'all/test/test'
 sample_dir = 'all/sample_submission.csv'
-epochs = 20
+epochs = 100
 BATCH_SIZE = 128
 SEED = 777
-SHAPE = (199, 199, 4)
+SHAPE = (192, 192, 4)
 DIR = ''
 VAL_RATIO = 0.1 # 10 % as validation
 THRESHOLD = 0.05 # due to different cost of True Positive vs False Positive, this is the probability threshold to predict the class as 'yes'
@@ -146,7 +137,7 @@ def fitSerializeModel():
     model = create_model(SHAPE)
     model.compile(
         loss='binary_crossentropy',
-        optimizer=Adam(1e-03),
+        optimizer=Nadam(1e-03),
         metrics=['acc', f1])
 
     model.summary()
@@ -165,8 +156,8 @@ def fitSerializeModel():
     print(paths.shape, labels.shape)
     print(pathsTrain.shape, labelsTrain.shape, pathsVal.shape, labelsVal.shape)
 
-    tg = ProteinDataGenerator(pathsTrain, labelsTrain, BATCH_SIZE, SHAPE, use_cache=True, augment=False, shuffle=False)
-    vg = ProteinDataGenerator(pathsVal, labelsVal, BATCH_SIZE, SHAPE, use_cache=True, shuffle=False)
+    tg = ProteinDataGenerator(pathsTrain, labelsTrain, BATCH_SIZE, SHAPE, use_cache=True, augment=False2, shuffle=True)
+    vg = ProteinDataGenerator(pathsVal, labelsVal, BATCH_SIZE, SHAPE, use_cache=True, shuffle=True)
 
     # https://keras.io/callbacks/#modelcheckpoint
     checkpoint = ModelCheckpoint('./base.model', monitor='val_loss', verbose=1, save_best_only=True,
@@ -206,7 +197,7 @@ def f1(y_true, y_pred):
 
 
 def create_model(input_shape):
-    dropRate = 0.25
+    dropRate = 0.30
 
     init = Input(input_shape)
     x = BatchNormalization(axis=-1)(init)
@@ -248,10 +239,6 @@ def create_model(input_shape):
     x = BatchNormalization(axis=-1)(x)
     x = MaxPooling2D(pool_size=(2, 2))(x)
     x = Dropout(dropRate)(x)
-    # x = Conv2D(256, (1, 1), activation='relu')(x)
-    # x = BatchNormalization(axis=-1)(x)
-    # x = MaxPooling2D(pool_size=(2, 2))(x)
-    # x = Dropout(0.25)(x)
     x = Flatten()(x)
     x = Dropout(0.5)(x)
     x = Dense(28)(x)
@@ -293,7 +280,7 @@ def loadModelFromJSON():
     model = create_model(SHAPE)
     model.compile(
         loss='binary_crossentropy',
-        optimizer=Adam(1e-03),
+        optimizer=Nadam(1e-03),
         metrics=['acc', f1])
     # load weights into new model
     model.load_weights("model.h5")
@@ -340,32 +327,9 @@ class ProteinDataGenerator(keras.utils.Sequence):
             seq = iaa.Sequential([
                 iaa.OneOf([
                     iaa.Fliplr(0.5),  # horizontal flips
-                    iaa.Crop(percent=(0, 0.1)),  # random crops
                     # Small gaussian blur with random sigma between 0 and 0.5.
                     # But we only blur about 50% of all images.
-                    iaa.Sometimes(0.5,
-                                  iaa.GaussianBlur(sigma=(0, 0.5))
-                                  ),
-                    # Strengthen or weaken the contrast in each image.
-                    iaa.ContrastNormalization((0.75, 1.5)),
-                    # Add gaussian noise.
-                    # For 50% of all images, we sample the noise once per pixel.
-                    # For the other 50% of all images, we sample the noise per pixel AND
-                    # channel. This can change the color (not only brightness) of the
-                    # pixels.
-                    iaa.AdditiveGaussianNoise(loc=0, scale=(0.0, 0.05 * 255), per_channel=0.5),
-                    # Make some images brighter and some darker.
-                    # In 20% of all cases, we sample the multiplier once per channel,
-                    # which can end up changing the color of the images.
-                    iaa.Multiply((0.8, 1.2), per_channel=0.2),
-                    # Apply affine transformations to each image.
-                    # Scale/zoom them, translate/move them, rotate them and shear them.
-                    iaa.Affine(
-                        scale={"x": (0.8, 1.2), "y": (0.8, 1.2)},
-                        translate_percent={"x": (-0.2, 0.2), "y": (-0.2, 0.2)},
-                        rotate=(-180, 180),
-                        shear=(-8, 8)
-                    )
+
                 ])], random_order=True)
 
             X = np.concatenate((X, seq.augment_images(X), seq.augment_images(X), seq.augment_images(X)), 0)
@@ -401,15 +365,20 @@ class ProteinDataGenerator(keras.utils.Sequence):
         im = np.divide(im, 255)
         return im
 
-def loadAll():
+# If using gpu, this likely needs to be run to manage GPU
+# when predicting
+def setSession():
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
     config.log_device_placement = True  # to log device placement (on which device the operation ran)
-    # (nothing gets printed in Jupyter, only if you run it standalone)
     sess = tf.Session(config=config)
     set_session(sess)
+
+def loadAll():
     # As an alternate to using base.model, you can serialize your model and pass it in to generateSubmit.
     # model = loadModelFromJSON()
+    setSession()
+    fitSerializeModel()
     generateSubmitFile()
 
 def main():
