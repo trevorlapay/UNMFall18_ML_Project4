@@ -156,7 +156,7 @@ def fitSerializeModel():
     print(paths.shape, labels.shape)
     print(pathsTrain.shape, labelsTrain.shape, pathsVal.shape, labelsVal.shape)
 
-    tg = ProteinDataGenerator(pathsTrain, labelsTrain, BATCH_SIZE, SHAPE, use_cache=True, augment=False2, shuffle=True)
+    tg = ProteinDataGenerator(pathsTrain, labelsTrain, BATCH_SIZE, SHAPE, use_cache=True, augment=False, shuffle=True)
     vg = ProteinDataGenerator(pathsVal, labelsVal, BATCH_SIZE, SHAPE, use_cache=True, shuffle=True)
 
     # https://keras.io/callbacks/#modelcheckpoint
