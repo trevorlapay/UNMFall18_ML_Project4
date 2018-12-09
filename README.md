@@ -1,4 +1,6 @@
 # UNMFall18_ML_Project4
+# Human Protein Atlas Classification
+# Trevor La Pay, Luke Hanks, Kyle Jurney
 
 ## Setup
 
